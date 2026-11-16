@@ -2,10 +2,23 @@ import { useState } from "react";
 import { useAdbConnection } from "../connection/useAdbConnection";
 import { ConnectionGuard } from "../components/ConnectionGuard";
 import { DiagnosticCard } from "../components/DiagnosticCard";
-import { runAll, type DiagnosticKey } from "../services/diagnosticService";
-import type { DiagnosticFinding } from "../types/diagnostic";
+import { runFullDiagnostics } from "../services/diagnosticService";
+import type { DiagnosticFinding, OverallAssessment } from "../types/diagnostic";
 import { saveReport } from "../storage/reportRepository";
 import type { Report } from "../types/report";
+
+function computeOverallAssessment(findings: DiagnosticFinding[], errorCount: number): OverallAssessment {
+  if (findings.length === 0 || errorCount > 3) {
+    return "INCOMPLETE INSPECTION";
+  }
+  if (findings.some((f) => f.status === "FAIL")) {
+    return "POTENTIAL DISCREPANCIES FOUND";
+  }
+  if (findings.some((f) => f.status === "WARNING")) {
+    return "ADDITIONAL VERIFICATION REQUIRED";
+  }
+  return "NO MAJOR DISCREPANCIES DETECTED";
+}
 
 export function DiagnosticsPage() {
   const { session } = useAdbConnection();
@@ -18,21 +31,22 @@ export function DiagnosticsPage() {
     setRunning(true);
     setFindings([]);
 
-    const result = await runAll(session.adb, (key: DiagnosticKey) => {
-      setProgress(`Running check: ${key}...`);
+    const result = await runFullDiagnostics(session.adb, (stepName, index, total) => {
+      setProgress(`Running (${index + 1}/${total}): ${stepName}...`);
     });
 
     setFindings(result.findings);
     setRunning(false);
     setProgress("");
 
-    // Automatically save report
+    const overall = computeOverallAssessment(result.findings, result.errors.length);
+
     const report: Report = {
       id: `report-${Date.now()}`,
       createdAt: Date.now(),
       device: session.snapshot,
       findings: result.findings,
-      overall: "Completed scan",
+      overall,
     };
     await saveReport(report);
   };
