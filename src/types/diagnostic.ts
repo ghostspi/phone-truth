@@ -2,33 +2,83 @@ export type EvidenceLevel =
   | "DIRECT"
   | "PROPERTY"
   | "DERIVED"
+  | "MANUAL"
   | "UNAVAILABLE";
 
-export type FindingClass =
-  | "MATCH"
-  | "POSSIBLE_DISCREPANCY"
-  | "UNVERIFIED"
+export type InspectionStatus =
+  | "PASS"
+  | "FAIL"
+  | "WARNING"
   | "UNAVAILABLE"
-  | "REQUIRES_MANUAL_TEST";
+  | "INFO";
+
+export type OverallAssessment =
+  | "NO MAJOR DISCREPANCIES DETECTED"
+  | "POTENTIAL DISCREPANCIES FOUND"
+  | "ADDITIONAL VERIFICATION REQUIRED"
+  | "INCOMPLETE INSPECTION";
+
+export type SectionId =
+  | "overview"
+  | "identity"
+  | "storage"
+  | "ram"
+  | "battery"
+  | "processor"
+  | "display"
+  | "network"
+  | "security"
+  | "sensors"
+  | "performance"
+  | "system"
+  | "hardware-tests"
+  | "report"
+  | "history";
 
 export interface CommandRecord {
   command: string;
   ok: boolean;
+  outputPreview?: string;
   error?: string;
 }
 
-export interface DiagnosticFinding {
-  id: string;
-  title: string;
-  status: "ok" | "warning" | "unavailable" | "error";
-  values: Record<string, string | number | null>;
+export interface InspectedItem {
+  key: string;
+  label: string;
+  value: string;
+  status: InspectionStatus;
+  statusReason: string;
   evidence: EvidenceLevel;
-  notes: string[];
+  whatWasChecked: string;
+  whatItMeans: string;
+  whyItMatters: string;
+  rawPropertyOrSource?: string;
+}
+
+export interface DiagnosticFinding {
+  id: Exclude<SectionId, "overview" | "hardware-tests" | "report" | "history">;
+  title: string;
+  subtitle: string;
+  status: InspectionStatus;
+  summary: string;
+  buyerGuidance: string;
+  items: InspectedItem[];
+  limitations: string[];
+  evidence: EvidenceLevel;
   commands: CommandRecord[];
-  classification?: FindingClass;
+  rawValues: Record<string, string | number | null>;
 }
 
 export interface DiagnosticRunResult {
   findings: DiagnosticFinding[];
   errors: { key: string; message: string }[];
+}
+
+export interface ManualTestResult {
+  id: string;
+  name: string;
+  category: "display" | "sensors" | "hardware";
+  status: InspectionStatus;
+  notes: string;
+  testedAt: number;
 }
