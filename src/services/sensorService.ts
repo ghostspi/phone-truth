@@ -36,8 +36,6 @@ export async function collectSensors(adb: Adb): Promise<DiagnosticFinding> {
   const hasCompass = /sensor\.compass|hardware\.sensor\.compass/i.test(features) || sensorNames.some((s) => /magnetometer|compass/i.test(s));
   const hasGyro = /sensor\.gyroscope|hardware\.sensor\.gyroscope/i.test(features) || sensorNames.some((s) => /gyroscope/i.test(s));
   const hasAccel = /sensor\.accelerometer|hardware\.sensor\.accelerometer/i.test(features) || sensorNames.some((s) => /accelerometer/i.test(s));
-  const hasProximity = /sensor\.proximity|hardware\.sensor\.proximity/i.test(features) || sensorNames.some((s) => /proximity/i.test(s));
-  const hasLight = /sensor\.light|hardware\.sensor\.light/i.test(features) || sensorNames.some((s) => /light/i.test(s));
   const hasFingerprint = /hardware\.fingerprint/i.test(features);
   const hasNfc = /hardware\.nfc/i.test(features);
   const hasGps = /hardware\.location\.gps/i.test(features);
