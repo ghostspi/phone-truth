@@ -2,17 +2,17 @@ import type { Adb } from "@yume-chan/adb";
 import { runReadOnlyCommand } from "./adbShell";
 import type { DiagnosticFinding, InspectedItem } from "../types/diagnostic";
 
-export async function collectPerformance(adb: Adb): Promise<DiagnosticFinding> {
+export async function collectSystem(adb: Adb): Promise<DiagnosticFinding> {
   const commands: DiagnosticFinding["commands"] = [];
   const rawValues: Record<string, string | number | null> = {};
 
-  const [uptimeRes, topRes, meminfoRes] = await Promise.all([
-    runReadOnlyCommand(adb, "cat /proc/uptime", 4000),
-    runReadOnlyCommand(adb, "top -n 1 -b -m 5", 6000),
-    runReadOnlyCommand(adb, "dumpsys meminfo", 8000),
+  const [kernelRes, sepolicyRes, packagesRes] = await Promise.all([
+    runReadOnlyCommand(adb, "uname -a", 4000),
+    runReadOnlyCommand(adb, "getenforce", 4000),
+    runReadOnlyCommand(adb, "pm list packages -3", 8000),
   ]);
 
-  for (const r of [uptimeRes, topRes, meminfoRes]) {
+  for (const r of [kernelRes, sepolicyRes, packagesRes]) {
     commands.push({
       command: r.record.command,
       ok: r.record.ok,
@@ -21,65 +21,66 @@ export async function collectPerformance(adb: Adb): Promise<DiagnosticFinding> {
     });
   }
 
-  let uptimeHours = 0;
-  if (uptimeRes.ok && uptimeRes.output) {
-    const sec = Number(uptimeRes.output.trim().split(/\s+/)[0]);
-    if (Number.isFinite(sec)) {
-      uptimeHours = sec / 3600;
-      rawValues["uptimeSeconds"] = sec;
-      rawValues["uptimeHours"] = Number(uptimeHours.toFixed(1));
-    }
+  if (kernelRes.output) rawValues["kernelVersion"] = kernelRes.output.trim();
+  if (sepolicyRes.output) rawValues["selinuxMode"] = sepolicyRes.output.trim();
+
+  let thirdPartyCount = 0;
+  if (packagesRes.ok && packagesRes.output) {
+    thirdPartyCount = packagesRes.output.split("\n").filter((l) => l.startsWith("package:")).length;
+    rawValues["thirdPartyPackageCount"] = thirdPartyCount;
   }
 
   const items: InspectedItem[] = [
     {
-      key: "uptime",
-      label: "System Uptime",
-      value: uptimeHours > 0 ? `${uptimeHours.toFixed(1)} hours (${(uptimeHours / 24).toFixed(1)} days)` : "Unavailable",
-      status: uptimeHours > 0 ? "INFO" : "UNAVAILABLE",
-      statusReason: uptimeHours > 0 ? "Kernel uptime successfully read from /proc/uptime." : "Uptime unavailable.",
-      evidence: uptimeHours > 0 ? "DIRECT" : "UNAVAILABLE",
-      whatWasChecked: "Time elapsed since last system reboot (/proc/uptime)",
-      whatItMeans: uptimeHours > 0 ? `The device has been running continuously for ${uptimeHours.toFixed(1)} hours.` : "Not reported.",
-      whyItMatters: "High uptime confirms the phone is stable under ongoing operation.",
-      rawPropertyOrSource: `/proc/uptime = ${uptimeRes.output || "unavailable"}`,
+      key: "kernel",
+      label: "Linux Kernel Version",
+      value: kernelRes.output ? kernelRes.output.trim() : "Unavailable",
+      status: kernelRes.ok ? "PASS" : "UNAVAILABLE",
+      statusReason: kernelRes.ok ? "Kernel version successfully retrieved." : "Kernel version unavailable.",
+      evidence: kernelRes.ok ? "DIRECT" : "UNAVAILABLE",
+      whatWasChecked: "Linux kernel build release and architecture (uname -a)",
+      whatItMeans: kernelRes.output ? `Kernel build string: ${kernelRes.output.trim()}` : "Not reported.",
+      whyItMatters: "Provides exact kernel compilation details and build date.",
+      rawPropertyOrSource: `uname -a`,
     },
     {
-      key: "topProcesses",
-      label: "Active CPU & Process Activity",
-      value: topRes.ok ? "Process list retrieved successfully" : "Unavailable",
-      status: topRes.ok ? "INFO" : "UNAVAILABLE",
-      statusReason: topRes.ok ? "Top process snapshot retrieved via top command." : "Top command restricted.",
-      evidence: topRes.ok ? "DIRECT" : "UNAVAILABLE",
-      whatWasChecked: "Running process list and CPU utilization snapshot",
-      whatItMeans: topRes.ok ? "Captured active foreground and background processes." : "Restricted.",
-      whyItMatters: "Checks whether background processes are overloading the CPU at idle.",
-      rawPropertyOrSource: `top -n 1 -b -m 5`,
+      key: "selinux",
+      label: "SELinux Enforcement Mode",
+      value: sepolicyRes.output ? sepolicyRes.output.trim() : "Unavailable",
+      status: sepolicyRes.output.trim().toLowerCase() === "enforcing" ? "PASS" : "WARNING",
+      statusReason: sepolicyRes.output ? `SELinux reports ${sepolicyRes.output.trim()}.` : "Unavailable.",
+      evidence: sepolicyRes.output ? "DIRECT" : "UNAVAILABLE",
+      whatWasChecked: "Security-Enhanced Linux (SELinux) enforcement status",
+      whatItMeans: sepolicyRes.output
+        ? `SELinux is running in "${sepolicyRes.output.trim()}" mode.`
+        : "Not reported.",
+      whyItMatters: "Enforcing mode protects system sandbox integrity; Permissive mode lowers security sandboxes.",
+      rawPropertyOrSource: `getenforce`,
     },
     {
-      key: "memoryUsage",
-      label: "Runtime Memory Allocations (Dumpsys Meminfo)",
-      value: meminfoRes.ok ? "System memory summary retrieved" : "Unavailable",
-      status: meminfoRes.ok ? "INFO" : "UNAVAILABLE",
-      statusReason: meminfoRes.ok ? "Memory breakdown retrieved." : "Unavailable.",
-      evidence: meminfoRes.ok ? "DIRECT" : "UNAVAILABLE",
-      whatWasChecked: "Android system memory allocation breakdown",
-      whatItMeans: meminfoRes.ok ? "Retrieved runtime RAM allocation stats across system services." : "Restricted.",
-      whyItMatters: "Helps verify memory pressure and allocation overhead.",
-      rawPropertyOrSource: `dumpsys meminfo`,
+      key: "thirdPartyPackages",
+      label: "Installed Third-Party Apps",
+      value: packagesRes.ok ? `${thirdPartyCount} third-party user apps installed` : "Unavailable",
+      status: "INFO",
+      statusReason: packagesRes.ok ? "Third-party package list retrieved." : "Restricted.",
+      evidence: packagesRes.ok ? "DIRECT" : "UNAVAILABLE",
+      whatWasChecked: "Count of non-system user-installed APK packages",
+      whatItMeans: packagesRes.ok ? `Found ${thirdPartyCount} user-installed apps on the device.` : "Restricted.",
+      whyItMatters: "Shows whether the device still has apps from the previous owner.",
+      rawPropertyOrSource: `pm list packages -3`,
     },
   ];
 
   return {
-    id: "performance",
-    title: "Performance & Uptime",
-    subtitle: "Kernel uptime, active process snapshot, and memory allocation summary",
-    status: uptimeRes.ok ? "PASS" : "UNAVAILABLE",
-    summary: uptimeHours > 0 ? `System uptime is ${uptimeHours.toFixed(1)} hours.` : "Performance metrics retrieved.",
-    buyerGuidance: "Check uptime to see how long the device has been running without a reboot.",
+    id: "system",
+    title: "Operating System & Kernel",
+    subtitle: "Linux kernel build, SELinux enforcement, and installed user packages",
+    status: kernelRes.ok ? "PASS" : "UNAVAILABLE",
+    summary: `Kernel: ${kernelRes.output ? kernelRes.output.trim().slice(0, 50) + "..." : "Unavailable"} • SELinux: ${sepolicyRes.output ? sepolicyRes.output.trim() : "Unknown"}.`,
+    buyerGuidance: "Review installed apps and kernel integrity to ensure a clean operating environment.",
     items,
-    limitations: ["Performance metrics reflect a momentary snapshot in time."],
-    evidence: uptimeRes.ok ? "DIRECT" : "PROPERTY",
+    limitations: ["Inspects package counts without viewing personal app content."],
+    evidence: kernelRes.ok ? "DIRECT" : "PROPERTY",
     commands,
     rawValues,
   };
