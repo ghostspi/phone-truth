@@ -88,7 +88,7 @@ export function AdbConnectionProvider({ children }: { children: ReactNode }) {
     const manager = AdbDaemonWebUsbDeviceManager.BROWSER;
     if (!manager) {
       setError(
-        "WebUSB is unavailable. Use desktop Chrome or Edge over HTTPS or localhost.",
+        "WebUSB is unavailable. Open PHONE TRUTH in desktop Chrome or Edge over HTTPS.",
       );
       setState("CONNECTION_FAILED");
       return;
@@ -104,7 +104,7 @@ export function AdbConnectionProvider({ children }: { children: ReactNode }) {
     }
 
     if (!device) {
-      setError("No device was selected in the USB picker.");
+      setError("No Android device was selected in the browser USB picker.");
       setState("NOT_CONNECTED");
       return;
     }
@@ -123,14 +123,32 @@ export function AdbConnectionProvider({ children }: { children: ReactNode }) {
 
       const adb = new Adb(transport);
 
-      const manufacturer = await readProp(adb, "ro.product.manufacturer");
-      const model = await readProp(adb, "ro.product.model");
-      const androidVersion = await readProp(adb, "ro.build.version.release");
+      const [
+        manufacturer,
+        brand,
+        model,
+        codename,
+        androidVersion,
+        sdkVersion,
+        securityPatch,
+      ] = await Promise.all([
+        readProp(adb, "ro.product.manufacturer"),
+        readProp(adb, "ro.product.brand"),
+        readProp(adb, "ro.product.model"),
+        readProp(adb, "ro.product.device"),
+        readProp(adb, "ro.build.version.release"),
+        readProp(adb, "ro.build.version.sdk"),
+        readProp(adb, "ro.build.version.security_patch"),
+      ]);
 
       const snapshot: DeviceSnapshot = {
         manufacturer: manufacturer || "Unknown",
+        brand: brand || manufacturer || "Unknown",
         model: model || "Unknown",
+        codename: codename || "Unknown",
         androidVersion: androidVersion || "Unknown",
+        sdkVersion: sdkVersion || "Unknown",
+        securityPatch: securityPatch || "Unknown",
         serial: device.serial,
       };
 
@@ -175,10 +193,10 @@ async function readProp(adb: Adb, key: string): Promise<string> {
 function formatAdbError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("DeviceBusyError") || message.includes("already in use")) {
-    return "The device is already in use by another program (for example, Android Studio or a running adb server). Close that program and try again.";
+    return "This phone is already claimed by another program (such as Android Studio or a local adb server). Close that program and click Connect Device again.";
   }
   if (message.includes("authorization") || message.includes("AUTH")) {
-    return "USB debugging authorization was rejected. Unlock the phone, tap 'Allow' on the debugging prompt, or revoke old authorizations in Developer Options and retry.";
+    return "USB debugging authorization was rejected or timed out. Unlock your phone, tap 'Allow' on the 'Allow USB debugging?' prompt, and retry.";
   }
   return message;
 }
