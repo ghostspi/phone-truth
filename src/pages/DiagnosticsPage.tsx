@@ -46,6 +46,8 @@ export function DiagnosticsPage() {
       createdAt: Date.now(),
       device: session.snapshot,
       findings: result.findings,
+      comparisons: [],
+      manualTests: [],
       overall,
     };
     await saveReport(report);
